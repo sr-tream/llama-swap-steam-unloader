@@ -1,0 +1,4 @@
+*.kwinscript
+__pycache__/
+*.pyc
+.venv/

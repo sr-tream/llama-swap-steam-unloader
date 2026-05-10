@@ -1,0 +1,12 @@
+[Unit]
+Description=Steam Unloader D-Bus Server - unloads llama-swap models on game launch
+After=dbus.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/steam-unloader-dbus-server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
