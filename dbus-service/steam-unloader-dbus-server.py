@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -21,23 +22,31 @@ from dbus_fast.aio import MessageBus
 from dbus_fast.service import ServiceInterface, dbus_method
 from dbus_fast import BusType, NameFlag
 
-# Configuration
-UNLOAD_URL = "http://localhost:12434/api/models/unload"
-LOG_DIR = Path(__import__("os").environ.get(
-    "XDG_STATE_HOME", str(Path.home() / ".local/state")
+# Configuration — overridable via environment, prefixed to avoid collisions.
+STEAM_UNLOADER_URL = os.environ.get(
+    "STEAM_UNLOADER_URL", "http://localhost:12434/api/models/unload"
+)
+STEAM_UNLOADER_COOLDOWN = float(os.environ.get("STEAM_UNLOADER_COOLDOWN", "30"))
+# Optional bearer token for llama-swap deployments behind auth. Empty = no header.
+STEAM_UNLOADER_API_KEY = os.environ.get("STEAM_UNLOADER_API_KEY", "").strip()
+STEAM_UNLOADER_LOG_DIR = Path(os.environ.get(
+    "STEAM_UNLOADER_LOG_DIR",
+    os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")),
 ))
-LOG_FILE = LOG_DIR / "steam-unloader.log"
+STEAM_UNLOADER_LOG_FILE = STEAM_UNLOADER_LOG_DIR / "steam-unloader.log"
 
 # D-Bus service identity
-BUS_NAME = "org.sr.SteamUnloader"
-OBJECT_PATH = "/org/sr/SteamUnloader"
-INTERFACE_NAME = "org.sr.SteamUnloader"
+STEAM_UNLOADER_BUS_NAME       = "org.sr.SteamUnloader"
+STEAM_UNLOADER_OBJECT_PATH    = "/org/sr/SteamUnloader"
+STEAM_UNLOADER_INTERFACE_NAME = "org.sr.SteamUnloader"
+
+STEAM_UNLOADER_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler(LOG_FILE),
+        logging.FileHandler(STEAM_UNLOADER_LOG_FILE),
         logging.StreamHandler(sys.stderr),
     ],
 )
@@ -45,25 +54,24 @@ log = logging.getLogger("steam-unloader-dbus")
 
 # Prevent duplicate unloads within a short window
 _last_unload_time: float = 0
-_UNLOAD_COOLDOWN = 30  # seconds
 
 
 class SteamUnloaderInterface(ServiceInterface):
     """D-Bus interface for steam-unloader."""
 
     def __init__(self, bus: MessageBus) -> None:
-        super().__init__(INTERFACE_NAME)
+        super().__init__(STEAM_UNLOADER_INTERFACE_NAME)
         self._bus = bus
 
     @dbus_method()
     def Unload(self) -> "b":
-        """Trigger model unloading. Called by KWin JS via KWin.callDBus()."""
+        """Trigger model unloading. Called by the KWin script via callDBus()."""
         global _last_unload_time
         now = asyncio.get_event_loop().time()
 
-        if now - _last_unload_time < _UNLOAD_COOLDOWN:
-            log.info("Unload request ignored (cooldown: %.0f/%ds)",
-                     now - _last_unload_time, _UNLOAD_COOLDOWN)
+        if now - _last_unload_time < STEAM_UNLOADER_COOLDOWN:
+            log.info("Unload request ignored (cooldown: %.0f/%.0fs)",
+                     now - _last_unload_time, STEAM_UNLOADER_COOLDOWN)
             return False
 
         _last_unload_time = now
@@ -74,21 +82,26 @@ class SteamUnloaderInterface(ServiceInterface):
     @dbus_method()
     def Status(self) -> "s":
         """Return daemon status info."""
-        return (f"ok (bus={BUS_NAME}, cooldown={_UNLOAD_COOLDOWN}s, "
+        return (f"ok (bus={STEAM_UNLOADER_BUS_NAME}, "
+                f"cooldown={STEAM_UNLOADER_COOLDOWN:.0f}s, "
                 f"last_unload={_last_unload_time:.0f})")
 
     @dbus_method()
     def Debug(self, msg: "s") -> "b":
-        """Debug logging endpoint. Called by KWin JS for logging."""
+        """Debug logging endpoint. Called by the KWin script for logging."""
         log.debug("KWin JS debug: %s", msg)
         return True
 
 
 def _trigger_unload() -> bool:
-    """POST to llama-swap /api/models/unload."""
+    """POST to llama-swap unload endpoint."""
+    cmd = ["curl", "-sf", "-X", "POST"]
+    if STEAM_UNLOADER_API_KEY:
+        cmd += ["-H", f"Authorization: Bearer {STEAM_UNLOADER_API_KEY}"]
+    cmd.append(STEAM_UNLOADER_URL)
     try:
         result = subprocess.run(
-            ["curl", "-sf", "-X", "POST", UNLOAD_URL],
+            cmd,
             capture_output=True,
             text=True,
             timeout=10,
@@ -113,23 +126,22 @@ def _trigger_unload() -> bool:
 
 
 async def main() -> None:
-    log.info("Starting Steam Unloader D-Bus server...")
+    log.info("Starting Steam Unloader D-Bus server (URL=%s, cooldown=%.0fs)",
+             STEAM_UNLOADER_URL, STEAM_UNLOADER_COOLDOWN)
 
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Connect to session bus
     bus = MessageBus(bus_type=BusType.SESSION)
     await bus.connect()
     log.info("Connected to D-Bus session bus (unique: %s)", bus.unique_name)
 
-    # Export our interface
     interface = SteamUnloaderInterface(bus)
-    bus.export(OBJECT_PATH, interface)
-    log.info("Exported %s at %s", INTERFACE_NAME, OBJECT_PATH)
+    bus.export(STEAM_UNLOADER_OBJECT_PATH, interface)
+    log.info("Exported %s at %s",
+             STEAM_UNLOADER_INTERFACE_NAME, STEAM_UNLOADER_OBJECT_PATH)
 
-    # Request bus name (ALLOW_REPLACEMENT: take over if old daemon is running)
-    await bus.request_name(BUS_NAME, flags=NameFlag.ALLOW_REPLACEMENT)
-    log.info("Acquired bus name %s", BUS_NAME)
+    # ALLOW_REPLACEMENT lets a freshly-started daemon take over from an old one.
+    await bus.request_name(STEAM_UNLOADER_BUS_NAME,
+                           flags=NameFlag.ALLOW_REPLACEMENT)
+    log.info("Acquired bus name %s", STEAM_UNLOADER_BUS_NAME)
 
     log.info("Steam Unloader D-Bus server ready. Waiting for calls...")
 

@@ -84,12 +84,17 @@ and pick `steam-unloader.kwinscript`.
 
 ## Configuration
 
-All knobs are at the top of `dbus-service/steam-unloader-dbus-server.py`:
+All daemon knobs are environment-overridable. Defaults match common setups; set
+overrides via `~/.config/systemd/user/steam-unloader.service.d/override.conf`
+(use `systemctl --user edit steam-unloader.service` for a guided edit) and add
+`Environment=KEY=value` lines under `[Service]`.
 
-| Variable            | Default                                          | Purpose                            |
-| ------------------- | ------------------------------------------------ | ---------------------------------- |
-| `UNLOAD_URL`        | `http://localhost:12434/api/models/unload`       | llama-swap unload endpoint         |
-| `_UNLOAD_COOLDOWN`  | `30` (seconds)                                   | Debounce window for repeat fires   |
+| Variable                  | Default                                          | Purpose                                              |
+| ------------------------- | ------------------------------------------------ | ---------------------------------------------------- |
+| `STEAM_UNLOADER_URL`      | `http://localhost:12434/api/models/unload`       | llama-swap unload endpoint                           |
+| `STEAM_UNLOADER_COOLDOWN` | `30` (seconds)                                   | Debounce window for repeat fires                     |
+| `STEAM_UNLOADER_API_KEY`  | *(unset)*                                        | Optional bearer token for llama-swap behind auth     |
+| `STEAM_UNLOADER_LOG_DIR`  | `$XDG_STATE_HOME` (or `~/.local/state`)          | Where `steam-unloader.log` is written                |
 
 After editing, `systemctl --user restart steam-unloader.service`.
 
@@ -124,9 +129,6 @@ gdbus call --session --dest org.sr.SteamUnloader \
 
 - [llama-swap](https://github.com/mostlygeek/llama-swap) by mostlygeek — the LLM
   hot-swapper that this project drives.
-- Pattern for the JS-only KWin script + D-Bus integration borrowed from
-  [solaar-kwin-integration](https://github.com/pwr-Solaar/Solaar) — a clean
-  reference for the (poorly documented) KWin 6 scripting API.
 
 ## License
 
