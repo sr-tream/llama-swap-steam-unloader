@@ -1,4 +1,6 @@
 *.kwinscript
+*-dbus.zip
+.dbus-stage/
 __pycache__/
 *.pyc
 .venv/

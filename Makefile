@@ -8,6 +8,7 @@
 
 PLUGIN_ID    := steam-unloader
 KWINSCRIPT   := $(PLUGIN_ID).kwinscript
+DBUS_ZIP     := $(PLUGIN_ID)-dbus.zip
 
 PREFIX       ?= $(HOME)/.local
 BIN_DIR      := $(PREFIX)/bin
@@ -19,12 +20,16 @@ DAEMON_NAME  := steam-unloader-dbus-server.py
 UNIT_NAME    := steam-unloader.service
 
 KWIN_SOURCES := kwin-script/metadata.json kwin-script/contents/code/main.js
+DBUS_SOURCES := $(DAEMON_SRC) $(UNIT_SRC)
 
-.PHONY: all package install install-kwin install-dbus uninstall clean
+.PHONY: all package package-kwin package-dbus install install-kwin install-dbus uninstall clean
 
 all: package
 
-package: $(KWINSCRIPT)
+package: package-kwin package-dbus
+
+package-kwin: $(KWINSCRIPT)
+package-dbus: $(DBUS_ZIP)
 
 # Build a .kwinscript zip with metadata.json at the archive root, so that
 # both `kpackagetool6 -i` and the GUI "Install from File…" KCM accept it.
@@ -34,9 +39,20 @@ $(KWINSCRIPT): $(KWIN_SOURCES)
 	cd kwin-script && zip -r ../$@ metadata.json contents
 	@echo "built: $@"
 
+# Build a drop-in zip with home-relative paths so users can `unzip -d ~/`
+# straight into place, then enable the systemd unit.
+$(DBUS_ZIP): $(DBUS_SOURCES)
+	@command -v zip >/dev/null || { echo "error: 'zip' is required" >&2; exit 1; }
+	rm -rf .dbus-stage $@
+	install -Dm755 $(DAEMON_SRC) .dbus-stage/.local/bin/$(DAEMON_NAME)
+	install -Dm644 $(UNIT_SRC)   .dbus-stage/.config/systemd/user/$(UNIT_NAME)
+	cd .dbus-stage && zip -r ../$@ .local .config
+	rm -rf .dbus-stage
+	@echo "built: $@"
+
 install: install-kwin install-dbus
 
-install-kwin: package
+install-kwin: package-kwin
 	@command -v kpackagetool6 >/dev/null || { echo "error: 'kpackagetool6' is required" >&2; exit 1; }
 	@if kpackagetool6 -t KWin/Script -l 2>/dev/null | grep -qx "$(PLUGIN_ID)"; then \
 	    kpackagetool6 -t KWin/Script -u $(KWINSCRIPT); \
@@ -65,4 +81,4 @@ uninstall:
 	@echo "Uninstalled. State files in ~/.local/state/steam-unloader.log are left for inspection."
 
 clean:
-	rm -f $(KWINSCRIPT)
+	rm -rf $(KWINSCRIPT) $(DBUS_ZIP) .dbus-stage
