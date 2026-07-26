@@ -10,12 +10,12 @@ language model for VRAM.
 ```
 ┌────────────────────────┐  windowAdded  ┌──────────────────────┐  HTTP POST   ┌─────────────┐
 │  KWin script           │ ───────────▶ │  D-Bus daemon        │ ───────────▶│  llama-swap │
-│  (steam_app_* match)   │  D-Bus call   │  org.sr.SteamUnloader│   /unload    │             │
+│ (class regex match)    │  D-Bus call   │  org.sr.SteamUnloader│   /unload    │             │
 └────────────────────────┘               └──────────────────────┘              └─────────────┘
 ```
 
 1. A small JS-only KWin script watches `workspace.windowAdded` for windows
-   whose `resourceClass` starts with `steam_app_`.
+   whose `resourceClass` matches the configured regular expression.
 2. On match it calls `org.sr.SteamUnloader.Unload()` over the session bus.
 3. A user-level systemd service runs a Python daemon that exports that
    D-Bus interface and POSTs to llama-swap's
@@ -98,14 +98,27 @@ overrides via `~/.config/systemd/user/steam-unloader.service.d/override.conf`
 
 After editing, `systemctl --user restart steam-unloader.service`.
 
-The detection prefix is at the top of `kwin-script/contents/code/main.js`:
+The KWin script setting is:
 
-```javascript
-var STEAM_PREFIX = "steam_app_";
+| Setting       | Default           | Purpose                                  |
+| ------------- | ----------------- | ---------------------------------------- |
+| `classRegex`  | `^steam_app_.*$` | Regex matched against `resourceClass`    |
+
+The script matches `resourceClass` against the configurable `classRegex`
+setting. Configure it in **System Settings → Window Behavior → KWin Scripts**
+using the script's configuration button, or set it directly with:
+
+```bash
+kwriteconfig6 --file kwinrc \
+  --group Script-steam-unloader --key classRegex \
+  '^(steam_app_.*|heroic.*)$'
 ```
 
-Steam games on Linux always set `WM_CLASS = steam_app_<appid>` (both X11 and
-Wayland via `xdg-toplevel.set_app_id`), so the prefix match is reliable.
+The default is `^steam_app_.*$`. Use `|` to match multiple classes, then
+restart/reload the KWin script for the change to take effect. Steam games on
+Linux set `WM_CLASS = steam_app_<appid>` (both X11 and Wayland via
+`xdg-toplevel.set_app_id`); Heroic and Wine games can use different classes,
+which can now be added without changing the script.
 
 ## D-Bus interface
 

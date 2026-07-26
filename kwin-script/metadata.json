@@ -2,9 +2,9 @@
     "KPackageStructure": "KWin/Script",
     "KPlugin": {
         "Name": "Steam Unloader",
-        "Description": "Unloads llama-swap models when Steam games launch",
+        "Description": "Unloads llama-swap models when configured game windows launch",
         "Id": "steam-unloader",
-        "Version": "0.2.0",
+        "Version": "0.3.0",
         "Authors": [
             {
                 "Name": "sr_team"
@@ -13,5 +13,6 @@
         "License": "MIT"
     },
     "X-Plasma-API": "javascript",
-    "X-Plasma-MainScript": "code/main.js"
+    "X-Plasma-MainScript": "code/main.js",
+    "X-KDE-ConfigModule": "kwin/effects/configs/kcm_kwin4_genericscripted"
 }

@@ -19,7 +19,10 @@ UNIT_SRC     := dbus-service/steam-unloader.service
 DAEMON_NAME  := steam-unloader-dbus-server.py
 UNIT_NAME    := steam-unloader.service
 
-KWIN_SOURCES := kwin-script/metadata.json kwin-script/contents/code/main.js
+KWIN_SOURCES := kwin-script/metadata.json \
+                kwin-script/contents/code/main.js \
+                kwin-script/contents/config/main.xml \
+                kwin-script/contents/ui/config.ui
 DBUS_SOURCES := $(DAEMON_SRC) $(UNIT_SRC)
 
 .PHONY: all package package-kwin package-dbus install install-kwin install-dbus uninstall clean
